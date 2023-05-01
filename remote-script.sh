@@ -1,5 +1,6 @@
 #!/bin/bash
 
-ARG1=$1
+# ARG1=$1
 echo "Launch remote script!"
-echo "This var NAME was set outside of this script: $ARG1"
+echo "This var NAME was set outside of this script: $NAME"
+# echo "This var NAME was set outside of this script: $ARG1"

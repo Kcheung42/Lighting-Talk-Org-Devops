@@ -6,7 +6,6 @@
 #+PROPERTY: header-args+ :var REMOTE_SCRIPT_BRANCH = "master"
 #+PROPERTY: header-args+ :dir /ssh:kcheung@goshawk:~
 #+PROPERTY: header-args+ :results output
-#+PROPERTY: header-args+ :noweb yes
 
 * Introduction
 * Why?
@@ -28,12 +27,12 @@ echo NAME=$NAME
 ** Launch a Remote Script
 
 #+begin_src bash :exports code :padline no :no-expand :results verbatim
-sh $REMOTE_SCRIPT_REPO/remote-script.sh $NAME
+sh $REMOTE_SCRIPT_REPO/remote-script.sh
 #+end_src
 
 #+RESULTS:
 : Launch remote script!
-: This var NAME was set outside of this script:
+: This var NAME was set outside of this script: Kenny
 
 ** Git Checkout & Pull Latest
 
@@ -49,4 +48,4 @@ echo "On branch $GRIDFIRE_SCRIPTS_BRANCH ($COMMIT)"
 #+RESULTS:
 : Fetching origin
 : Your branch is up to date with 'origin/master'.
-: On branch  (b6beedee8669c9aa8aeb79bc0293e4a966b3f258)
+: On branch  (2afa822cf0e0fd386486490e28ef3feae738eba1)
