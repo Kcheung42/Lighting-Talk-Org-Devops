@@ -27,7 +27,7 @@ echo NAME=$NAME
 ** Launch a Remote Script
 
 #+begin_src bash :exports code :padline no :no-expand :results verbatim
-sh $REMOTE_SCRIPT_REPO/remote-script.sh
+sh $REMOTE_SCRIPT_REPO/remote-script.sh $NAME
 #+end_src
 
 #+RESULTS:
