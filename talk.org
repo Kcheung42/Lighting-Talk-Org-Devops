@@ -24,6 +24,12 @@ echo REMOTE_SCRIPT_REPO=$REMOTE_SCRIPT_REPO
 echo REMOTE_SCRIPT_BRANCH=$REMOTE_SCRIPT_BRANCH
 #+end_src
 
+#+RESULTS:
+: FOOD=RAMEN
+: CUSTOMERS=DOG CAT BIRD
+: REMOTE_SCRIPT_REPO=/tmp/Lighting-Talk-Org-Devops
+: REMOTE_SCRIPT_BRANCH=master
+
 ** Git Checkout & Pull Latest
 
 #+begin_src bash
@@ -35,11 +41,25 @@ COMMIT=$(git rev-parse HEAD)
 echo "On branch $GRIDFIRE_SCRIPTS_BRANCH ($COMMIT)"
 #+end_src
 
+#+RESULTS:
+: Fetching origin
+: Your branch is behind 'origin/master' by 2 commits, and can be fast-forwarded.
+:   (use "git pull" to update your local branch)
+: Updating 1d53417..1569f05
+: Fast-forward
+:  talk.org | 78 +++++++++++++++++++++++++++++++++++++++++++---------------------
+:  1 file changed, 53 insertions(+), 25 deletions(-)
+: On branch  (1569f05f035f4812afeab8a21a66306d7cd13668)
+
 ** Pass ORG variables to remote procces
 
 #+begin_src bash :exports code :padline no :no-expand :results verbatim
 sh $REMOTE_SCRIPT_REPO/remote-script.sh $FOOD
 #+end_src
+
+#+RESULTS:
+: Launch remote script!
+: Constructing RAMEN
 
 ** Inject code blocks into another
 
