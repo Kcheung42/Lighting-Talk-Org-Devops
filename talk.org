@@ -1,9 +1,12 @@
 #+TITLE: Devops using ORG
 #+AUTHOR: Kenneth Cheung and Gary W. Johnson, Ph.D.
 
-#+PROPERTY: header-args+ :var NAME "Kenny"
-#+PROPERTY: header-args+ :var REMOTE_SCRIPT "/home/kcheung/Lighting-Talk-Org-Devops"
+#+PROPERTY: header-args+ :var NAME                 = "Kenny"
+#+PROPERTY: header-args+ :var REMOTE_SCRIPT_REPO   = "/home/kcheung/Lighting-Talk-Org-Devops"
+#+PROPERTY: header-args+ :var REMOTE_SCRIPT_BRANCH = "master"
 #+PROPERTY: header-args+ :dir /ssh:kcheung@goshawk:~
+#+PROPERTY: header-args+ :results output
+#+PROPERTY: header-args+ :noweb yes
 
 * Introduction
 * Why?
@@ -13,15 +16,37 @@
 - Documentation and code lives in the same place
 
 * How?
-** Launch a Remote Script
+** Verify vars are set
 
-#+begin_src bash :exports code :padline no :no-expand
-ENVIRONMENT="ALL"
-ENVIRONMENT+="NAME=NAME"
-
-sh $REMOTE_SCRIPT/remote-script.sh
+#+begin_src bash :tangle no
+echo NAME=$NAME
 #+end_src
 
 #+RESULTS:
+: NAME=Kenny
 
-* Git Checkout & Pull Latest
+** Launch a Remote Script
+
+#+begin_src bash :exports code :padline no :no-expand :results verbatim
+sh $REMOTE_SCRIPT_REPO/remote-script.sh $NAME
+#+end_src
+
+#+RESULTS:
+: Launch remote script!
+: This var NAME was set outside of this script:
+
+** Git Checkout & Pull Latest
+
+#+begin_src bash
+cd $REMOTE_SCRIPT_REPO
+git fetch --all
+git checkout $REMOTE_SCRIPT_BRANCH
+git pull
+COMMIT=$(git rev-parse HEAD)
+echo "On branch $GRIDFIRE_SCRIPTS_BRANCH ($COMMIT)"
+#+end_src
+
+#+RESULTS:
+: Fetching origin
+: Your branch is up to date with 'origin/master'.
+: On branch  (b6beedee8669c9aa8aeb79bc0293e4a966b3f258)
