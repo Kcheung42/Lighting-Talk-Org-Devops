@@ -1,7 +1,7 @@
 #+TITLE: Devops using ORG
 #+AUTHOR: Kenneth Cheung and Gary W. Johnson, Ph.D.
 
-#+PROPERTY: header-args+ :var NAME                 = "Kenny"
+#+PROPERTY: header-args+ :var FOOD                 = "RAMEN"
 #+PROPERTY: header-args+ :var REMOTE_SCRIPT_REPO   = "/home/kcheung/Lighting-Talk-Org-Devops"
 #+PROPERTY: header-args+ :var REMOTE_SCRIPT_BRANCH = "master"
 #+PROPERTY: header-args+ :dir /ssh:kcheung@goshawk:~
@@ -32,7 +32,7 @@ sh $REMOTE_SCRIPT_REPO/remote-script.sh $NAME
 
 #+RESULTS:
 : Launch remote script!
-: This var NAME was set outside of this script: Kenny
+: Hello Kenny
 
 ** Git Checkout & Pull Latest
 
