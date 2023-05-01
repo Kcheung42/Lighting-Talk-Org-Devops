@@ -1,5 +1,5 @@
 #+TITLE: Devops using ORG
-#+AUTHOR: Kenneth Cheung and Gary W. Johnson, Ph.D.
+#+AUTHOR: Kenneth Cheung
 
 #+PROPERTY: header-args+ :var FOOD                 = "RAMEN"
 #+PROPERTY: header-args+ :var CUSTOMERS            = "DOG CAT BIRD"
@@ -19,10 +19,10 @@
 
 #+begin_src bash :tangle no
 echo FOOD=$FOOD
+echo CUSTOMERS=$CUSTOMERS
+echo REMOTE_SCRIPT_REPO=$REMOTE_SCRIPT_REPO
+echo REMOTE_SCRIPT_BRANCH=$REMOTE_SCRIPT_BRANCH
 #+end_src
-
-#+RESULTS:
-: FOOD=RAMEN
 
 ** Git Checkout & Pull Latest
 
@@ -81,6 +81,9 @@ Your bill is $59.97
 
 *** steps
 **** make-noodles
+
+say something about noodles
+
 #+name: make-noodles
 #+begin_src bash
 function make-noodles {
@@ -89,6 +92,9 @@ function make-noodles {
 #+end_src
 
 **** make-stock
+
+say something about dashi
+
 #+name: make-stock
 #+begin_src bash
 function make-stock {
