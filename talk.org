@@ -1,0 +1,1515 @@
+* Introduction
+* Why?
+
+- Version controlled
+- Reproducable
+- Documentation and code lives in the same place
+
+* How?
+
+** Pass Variables from ORG to a bash script on Remote Machine
+
+#+begin_src org
+,#+TITLE: Devops using ORG
+,#+AUTHOR: Kenneth Cheung and Gary W. Johnson, Ph.D.
+
+,#+PROPERTY: header-args+ :var NAME "Kenny"
+,#+PROPERTY: header-args+ :var REMOTE_SCRIPT "/home/kcheung/Lighting-Talk-Org-Devops"
+,#+PROPERTY: header-args+ :dir /ssh:kcheung@goshawk:~
+
+
+,#+begin_src bash :exports code :padline no :no-expand
+ENVIRONMENT="ALL"
+ENVIRONMENT+="NAME=NAME"
+
+,#+end_src
+
+#+end_src
+
+** Need to check out a certain branch and build an uberjar?
+
+#+begin_src bash
+cd $GRIDFIRE_SCRIPTS_REPO
+git fetch --all
+git checkout $GRIDFIRE_SCRIPTS_BRANCH
+git pull
+COMMIT=$(git rev-parse HEAD)
+echo "On branch $GRIDFIRE_SCRIPTS_BRANCH ($COMMIT)"
+#+end_src
+
+** GridFire SLURM Lanch Example
+
+#+begin_src org
+,#+TITLE: Automating Annual Burn Probability Runs with GridFire on the Gaia Cluster
+,#+AUTHOR: Kenneth Cheung and Gary W. Johnson, Ph.D.
+,#+DATE: Copyright © 2022 Spatial Informatics Group, LLC
+,#+TAGS: deprecated noexport
+
+,* Configure Emacs Settings
+
+,#+begin_src elisp :results none
+;;==========================================================
+;; First make sure that org and clojure-mode are installed
+;;==========================================================
+
+(require 'package)
+
+(setq package-selected-packages '(org ob-async cider)
+      package-archives          '(("gnu"          . "https://elpa.gnu.org/packages/")
+                                  ("melpa-stable" . "https://stable.melpa.org/packages/")
+                                  ("melpa"        . "https://melpa.org/packages/")))
+
+(unless (cl-every 'package-installed-p package-selected-packages)
+  (package-initialize)
+  (unless package-archive-contents
+    (package-refresh-contents))
+  (package-install-selected-packages))
+
+(require 'org)
+(require 'ob)
+(require 'ob-shell)
+(require 'ob-clojure)
+(require 'ob-async)
+(require 'cider)
+
+(org-babel-do-load-languages
+ 'org-babel-load-languages
+ '((emacs-lisp . t)
+   (shell      . t)
+   (clojure    . t)))
+
+(setq org-src-window-setup         'current-window
+      org-babel-clojure-backend    'cider
+      org-src-fontify-natively     t
+      org-confirm-babel-evaluate   nil
+      org-src-preserve-indentation t)
+,#+end_src
+
+,* Edit and Check Run Config Variables
+
+,#+PROPERTY: header-args  :var CLOJURE_CMD                          = "/usr/local/bin/clojure"
+,#+PROPERTY: header-args+ :var ELMFIRE_ANNUAL_BURNPROB_DIR          = "/home/elmfire/elmfire/runs/annual_burnprob/production/04"
+,#+PROPERTY: header-args+ :var FIRE_OCCURRENCE_DATABASE_DIR         = "/mnt/hyperion/elmfire/annual_burnprob/inputs/ignition_density/tiles"
+,#+PROPERTY: header-args+ :var FOD_BY_PYROME_DIR                    = "/home/elmfire/elmfire/annual_burnprob/inputs/pyromes_aug20/fod_by_pyrome"
+,#+PROPERTY: header-args+ :var FOD_BURN_PROBABILITY_CSV             = "/home/elmfire/elmfire/annual_burnprob/inputs/pyromes_aug20/pyrome_burnprob.csv"
+,#+PROPERTY: header-args+ :var GRIDFIRE_ANNUAL_BURNPROB_DIR         = "/mnt/hyperion/gridfire/annual_burnprob/production_04_test"
+,#+PROPERTY: header-args+ :var GRIDFIRE_BASE_EDN                    = "gridfire-base.edn"
+,#+PROPERTY: header-args+ :var GRIDFIRE_BRANCH                      = "kcheung-elm-to-grid-every-nth-elmfire"
+,#+PROPERTY: header-args+ :var GRIDFIRE_REPO                        = "/home/gridfire/gridfire"
+,#+PROPERTY: header-args+ :var GRIDFIRE_RUN_SCRIPT                  = "run_gridfire.sh"
+,#+PROPERTY: header-args+ :var GRIDFIRE_SCRIPTS_BRANCH              = "vwaeselynck-fire-factor-launch"
+,#+PROPERTY: header-args+ :var GRIDFIRE_SCRIPTS_REPO                = "/home/gridfire/gridfire-scripts/FireFactor"
+,#+PROPERTY: header-args+ :var GRIDFIRE_SETUP_SCRIPT                = "setup_gridfire.sh"
+,#+PROPERTY: header-args+ :var INPUTS_SDI_DIR                       = "/mnt/hyperion/data/fuels/sdi2/tiles"
+,#+PROPERTY: header-args+ :var INPUTS_FUEL_DIR                      = "/mnt/hyperion/data/fuels/fuels_2022_10/tiles"
+,#+PROPERTY: header-args+ :var INPUTS_LIVE_FUEL_MOISTURE_DIR        = "/mnt/hyperion/elmfire/inputs/historical_weather/rtma/rtma_merged/bsqtiles"
+,#+PROPERTY: header-args+ :var INPUTS_TOPOGRAPHY_DIR                = "/mnt/hyperion/data/fuels/landfire-2.2.0/landfire-2.2.0/tiles"
+,#+PROPERTY: header-args+ :var INPUTS_WEATHER_DIR                   = "/mnt/hyperion/elmfire/inputs/historical_weather/rtma/rtma_merged/bsqtiles"
+,#+PROPERTY: header-args+ :var JAVA_CMD                             = "/opt/graalvm-ce-java17-22.0.0.2/bin/java"
+,#+PROPERTY: header-args+ :var JAVA_HOME                            = "/opt/graalvm-ce-java17-22.0.0.2"
+,#+PROPERTY: header-args+ :var JAVA_OPTS                            = "-Xmx800G"
+,#+PROPERTY: header-args+ :var PYROME_ACRES_CSV                     = "/home/elmfire/elmfire/annual_burnprob/inputs/pyromes/raw/pyrome_acres.csv"
+,#+PROPERTY: header-args+ :var PYROMES_DIR                          = "/home/elmfire/elmfire/annual_burnprob/inputs/pyromes/raw/cleaned/pyromes"
+,#+PROPERTY: header-args+ :var SLURM_EXCLUDE_NODES_FOR_RUN          = ""
+,#+PROPERTY: header-args+ :var SLURM_EXCLUDE_NODES_FOR_POSTPROCESS  = ""
+,#+PROPERTY: header-args+ :var SLURM_LAUNCH_SCRIPT                  = "launch.slurm"
+,#+PROPERTY: header-args+ :var TILES_TO_PROCESS_CSV                 = "tiles_clipped_noheader_cleaned_for_testing.csv"
+,#+PROPERTY: header-args+ :var TEST_RUN                             = "true"
+,#+PROPERTY: header-args+ :var YEARS_TO_RUN                         = (number-sequence 2017 2018)
+,#+PROPERTY: header-args+ :dir /ssh:gridfire@olympus:~
+,#+PROPERTY: header-args+ :results output
+,#+PROPERTY: header-args+ :noweb yes
+
+Execute this block to make sure variables is set correctly. In emacs (Ctrl C, Ctrl C) will execute any code block.
+
+,#+begin_src bash :tangle no
+echo CLOJURE_CMD=$CLOJURE_CMD
+echo ELMFIRE_ANNUAL_BURNPROB_DIR=$ELMFIRE_ANNUAL_BURNPROB_DIR
+echo FIRE_OCCURRENCE_DATABASE_DIR=$FIRE_OCCURRENCE_DATABASE_DIR
+echo FOD_BY_PYROME_DIR=$FOD_BY_PYROME_DIR
+echo FOD_BURN_PROBABILITY_CSV=$FOD_BURN_PROBABILITY_CSV
+echo GRIDFIRE_ANNUAL_BURNPROB_DIR=$GRIDFIRE_ANNUAL_BURNPROB_DIR
+echo GRIDFIRE_BASE_EDN=$GRIDFIRE_BASE_EDN
+echo GRIDFIRE_BRANCH=$GRIDFIRE_BRANCH
+echo GRIDFIRE_REPO=$GRIDFIRE_REPO
+echo GRIDFIRE_RUN_SCRIPT=$GRIDFIRE_RUN_SCRIPT
+echo GRIDFIRE_SCRIPTS_BRANCH=$GRIDFIRE_SCRIPTS_BRANCH
+echo GRIDFIRE_SCRIPTS_REPO=$GRIDFIRE_SCRIPTS_REPO
+echo GRIDFIRE_SETUP_SCRIPT=$GRIDFIRE_SETUP_SCRIPT
+echo INPUTS_FUEL_DIR=$INPUTS_FUEL_DIR
+echo INPUTS_LIVE_FUEL_MOISTURE_DIR=$INPUTS_LIVE_FUEL_MOISTURE_DIR
+echo INPUTS_SDI_DIR=$INPUTS_SDI_DIR
+echo INPUTS_TOPOGRAPHY_DIR=$INPUTS_TOPOGRAPHY_DIR
+echo INPUTS_WEATHER_DIR=$INPUTS_WEATHER_DIR
+echo JAVA_CMD=$JAVA_CMD
+echo JAVA_HOME=$JAVA_HOME
+echo JAVA_OPTS=$JAVA_OPTS
+echo PYROME_ACRES_CSV=$PYROME_ACRES_CSV
+echo PYROMES_DIR=$PYROMES_DIR
+echo SLURM_EXCLUDE_NODES_FOR_POSTPROCESS=$SLURM_EXCLUDE_NODES_FOR_POSTPROCESS
+echo SLURM_EXCLUDE_NODES_FOR_RUN=$SLURM_EXCLUDE_NODES_FOR_RUN
+echo SLURM_LAUNCH_SCRIPT=$SLURM_LAUNCH_SCRIPT
+echo TILES_TO_PROCESS_CSV=$TILES_TO_PROCESS_CSV
+echo YEARS_TO_RUN=${YEARS_TO_RUN[*]}
+,#+end_src
+
+,#+RESULTS:
+,#+begin_example
+CLOJURE_CMD=/usr/local/bin/clojure
+ELMFIRE_ANNUAL_BURNPROB_DIR=/home/elmfire/elmfire/runs/annual_burnprob/production/04
+FIRE_OCCURRENCE_DATABASE_DIR=/mnt/hyperion/elmfire/annual_burnprob/inputs/ignition_density/tiles
+FOD_BY_PYROME_DIR=/home/elmfire/elmfire/annual_burnprob/inputs/pyromes_aug20/fod_by_pyrome
+FOD_BURN_PROBABILITY_CSV=/home/elmfire/elmfire/annual_burnprob/inputs/pyromes_aug20/pyrome_burnprob.csv
+GRIDFIRE_ANNUAL_BURNPROB_DIR=/mnt/hyperion/gridfire/annual_burnprob/production_04_test
+GRIDFIRE_BASE_EDN=gridfire-base.edn
+GRIDFIRE_BRANCH=kcheung-elm-to-grid-every-nth-elmfire
+GRIDFIRE_REPO=/home/gridfire/gridfire
+GRIDFIRE_RUN_SCRIPT=run_gridfire.sh
+GRIDFIRE_SCRIPTS_BRANCH=kcheung-fire-factor-launch
+GRIDFIRE_SCRIPTS_REPO=/home/gridfire/gridfire-scripts/FireFactor
+GRIDFIRE_SETUP_SCRIPT=setup_gridfire.sh
+INPUTS_FUEL_DIR=/mnt/hyperion/data/fuels/fuels_2022_10/tiles
+INPUTS_LIVE_FUEL_MOISTURE_DIR=/mnt/hyperion/elmfire/inputs/historical_weather/rtma/rtma_merged/bsqtiles
+INPUTS_SDI_DIR=/mnt/hyperion/data/fuels/sdi2/tiles
+INPUTS_TOPOGRAPHY_DIR=/mnt/hyperion/data/fuels/landfire-2.2.0/landfire-2.2.0/tiles
+INPUTS_WEATHER_DIR=/mnt/hyperion/elmfire/inputs/historical_weather/rtma/rtma_merged/bsqtiles
+JAVA_CMD=/opt/graalvm-ce-java17-22.0.0.2/bin/java
+JAVA_HOME=/opt/graalvm-ce-java17-22.0.0.2
+JAVA_OPTS=-Xmx800G
+PYROME_ACRES_CSV=/home/elmfire/elmfire/annual_burnprob/inputs/pyromes/raw/pyrome_acres.csv
+PYROMES_DIR=/home/elmfire/elmfire/annual_burnprob/inputs/pyromes/raw/cleaned/pyromes
+SLURM_EXCLUDE_NODES_FOR_POSTPROCESS=
+SLURM_EXCLUDE_NODES_FOR_RUN=
+SLURM_LAUNCH_SCRIPT=launch.slurm
+TILES_TO_PROCESS_CSV=tiles_clipped_noheader_cleaned_for_testing.csv
+YEARS_TO_RUN=2017 2018
+,#+end_example
+
+Here's a handy list of nodes on the cluster. Use this for SLURM_EXCLUDE_NODES_FOR_POSTPROCESS and
+SLURM_EXCLUDE_NODES_FOR_RUN. Just remove the nodes from this list that you want to use.
+
+aphrodite,apollo,ares,artemis,athena,cronus,demeter,diono,dionysus,hades,hephaestus,hera,hermes,hestia,maia,leto,metis,poseidon,rhea,semele,uranus,zeus
+
+,* Git Checkout & Pull Gridfire-Scripts Repo
+
+,#+begin_src bash
+cd $GRIDFIRE_SCRIPTS_REPO
+git fetch --all
+git checkout $GRIDFIRE_SCRIPTS_BRANCH
+git pull
+COMMIT=$(git rev-parse HEAD)
+echo "On branch $GRIDFIRE_SCRIPTS_BRANCH ($COMMIT)"
+,#+end_src
+
+,#+RESULTS:
+: Fetching origin
+: Branch 'vwaeselynck-fire-factor-launch' set up to track remote branch 'vwaeselynck-fire-factor-launch' from 'origin'.
+: Already up to date.
+: On branch vwaeselynck-fire-factor-launch (fba13add35852845cf555de2f15dbc9a95bcd681)
+
+,* Git Checkout & Pull from Gridfire Repo then Build GridFire UberJAR
+
+,#+begin_src bash
+cd $GRIDFIRE_REPO
+git fetch --all
+git checkout $GRIDFIRE_BRANCH
+git pull
+export JAVA_CMD
+export PATH=$JAVA_HOME/bin:$PATH
+$CLOJURE_CMD -T:build uberjar
+cd target
+LATEST_JAR=$(ls *.jar)
+ln -sf $LATEST_JAR gridfire.jar
+ls -l *.jar
+,#+end_src
+,#+RESULTS:
+,#+begin_example
+Fetching origin
+Your branch is behind 'origin/kcheung-elm-to-grid-every-nth-elmfire' by 1 commit, and can be fast-forwarded.
+  (use "git pull" to update your local branch)
+Updating 00d0ddb..e2be165
+Fast-forward
+ resources/elm_to_grid.clj | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+Build folder "target" removed
+Uberjar file created: "target/gridfire-2023.1.4-e2be165.jar"
+-rw-r--r-- 1 gridfire domain users 99783176 Jan  4 18:31 gridfire-2023.1.4-e2be165.jar
+lrwxrwxrwx 1 gridfire domain users       29 Jan  4 18:31 gridfire.jar -> gridfire-2023.1.4-e2be165.jar
+,#+end_example
+
+,* Submit Jobs to Slurm Queue
+
+You may either choose to launch the run and post processing seperately or all together.
+
+,** Launch Run and Post Processing Seperately
+,*** Launch Run
+
+NOTE for Val:
+
+CHUNK_NUMS refers to the line number in "config/blocks80/tiles_central.txt" and
+"config/blocks80/tiles_run.txt". This determines which tiles tiles to process. Here I've set the
+CHUNK_NUM to 22 to match the tiles tiles that I've chosen. The steps here is:
+
+1. Determine tiles you want to run
+2. lookup which lines they belong to in tiles_run.txt and tiles_central.txt.
+3. UPdate CHUNK_NUMS in this codeblock.
+
+,#+begin_src bash :exports code :padline no :no-expand
+#!/bin/sh
+if [ "$TEST_RUN" = "true" ]; then
+    CHUNK_NUMS="22"
+else
+    CHUNK_NUMS=`seq 5 15`
+    CHUNK_NUMS="$CHUNK_NUMS "`seq 17 75`
+    CHUNK_NUMS="$CHUNK_NUMS 79 80"
+fi
+
+mkdir -p $GRIDFIRE_ANNUAL_BURNPROB_DIR
+cd $GRIDFIRE_ANNUAL_BURNPROB_DIR
+rm -f -r ./out ./locks ./log_postprocess
+mkdir -p ./out ./locks/out ./log_postprocess
+
+COUNT=0
+
+echo "YEARS_TO_RUN:" $YEARS_TO_RUN
+
+for YEAR in ${YEARS_TO_RUN[*]}; do
+    for CHUNK_NUM in $CHUNK_NUMS; do
+        LOCKFILE=$GRIDFIRE_ANNUAL_BURNPROB_DIR/locks/${YEAR}_$CHUNK_NUM.lock
+        touch $LOCKFILE
+        NOW=`date -u +"%Y-%m-%d %H:%M:%S"`
+        echo $NOW $YEAR $CHUNK_NUM
+        let "COUNT = COUNT + 1"
+
+        #set environment
+        ENVIRONMENT="ALL"
+        ENVIRONMENT+=",CHUNK_NUM=$CHUNK_NUM"
+        ENVIRONMENT+=",ELMFIRE_ANNUAL_BURNPROB_DIR=$ELMFIRE_ANNUAL_BURNPROB_DIR"
+        ENVIRONMENT+=",GRIDFIRE_ANNUAL_BURNPROB_DIR=$GRIDFIRE_ANNUAL_BURNPROB_DIR"
+        ENVIRONMENT+=",GRIDFIRE_REPO=$GRIDFIRE_REPO"
+        ENVIRONMENT+=",GRIDFIRE_RUN_SCRIPT=$GRIDFIRE_RUN_SCRIPT"
+        ENVIRONMENT+=",GRIDFIRE_SCRIPTS_REPO=$GRIDFIRE_SCRIPTS_REPO"
+        ENVIRONMENT+=",GRIDFIRE_SETUP_SCRIPT=$GRIDFIRE_SETUP_SCRIPT"
+        ENVIRONMENT+=",INPUTS_FUEL_DIR=$INPUTS_FUEL_DIR"
+        ENVIRONMENT+=",INPUTS_LIVE_FUEL_MOISTURE_DIR=$INPUTS_LIVE_FUEL_MOISTURE_DIR"
+        ENVIRONMENT+=",INPUTS_SDI_DIR=$INPUTS_SDI_DIR"
+        ENVIRONMENT+=",INPUTS_TOPOGRAPHY_DIR=$INPUTS_TOPOGRAPHY_DIR"
+        ENVIRONMENT+=",INPUTS_WEATHER_DIR=$INPUTS_WEATHER_DIR"
+        ENVIRONMENT+=",JAVA_CMD=$JAVA_CMD"
+        ENVIRONMENT+=",JAVA_OPTS=$JAVA_OPTS"
+        ENVIRONMENT+=",LOCKFILE=$LOCKFILE"
+        ENVIRONMENT+=",TILES_TO_PROCESS_CSV=$TILES_TO_PROCESS_CSV"
+        ENVIRONMENT+=",TEST_RUN=$TEST_RUN"
+        ENVIRONMENT+=",YEAR=$YEAR"
+
+
+        if [ "$SLURM_EXCLUDE_NODES_FOR_RUN" == "" ]; then
+            sbatch --priority=3000000000 \
+                   --job-name=${YEAR}_$CHUNK_NUM.run \
+                   --output=$GRIDFIRE_ANNUAL_BURNPROB_DIR/locks/out/${YEAR}_${CHUNK_NUM}_%j.out \
+                   --error=$GRIDFIRE_ANNUAL_BURNPROB_DIR/locks/out/error_${YEAR}_${CHUNK_NUM}_%j.out \
+                   --export=$ENVIRONMENT \
+                   $GRIDFIRE_SCRIPTS_REPO/tangle/$SLURM_LAUNCH_SCRIPT
+        else
+            sbatch --priority=3000000000 \
+                   --job-name=${YEAR}_$CHUNK_NUM.run \
+                   --output=$GRIDFIRE_ANNUAL_BURNPROB_DIR/locks/out/${YEAR}_${CHUNK_NUM}_%j.out \
+                   --error=$GRIDFIRE_ANNUAL_BURNPROB_DIR/locks/out/error_${YEAR}_${CHUNK_NUM}_%j.out \
+                   --export=$ENVIRONMENT \
+                   --exclude=$SLURM_EXCLUDE_NODES_FOR_RUN \
+                   $GRIDFIRE_SCRIPTS_REPO/tangle/$SLURM_LAUNCH_SCRIPT
+        fi
+
+        sleep 1
+        NUM_LOCKS=`ls $GRIDFIRE_ANNUAL_BURNPROB_DIR/locks/*.lock 2> /dev/null | wc -l`
+        while [ "$NUM_LOCKS" -ge "2" ]; do
+            sleep 1
+            NUM_LOCKS=`ls $GRIDFIRE_ANNUAL_BURNPROB_DIR/locks/*.lock | wc -l`
+        done
+    done
+done
+exit 0
+,#+end_src
+
+,*** Launch Post Process: Conus Merge
+
+This process will stitch together all tiles year of an output layer  (burn_count,
+flame_length_max, flame_length_sum, ... etc). You can find these GeoTIFFs under
+post (i.e. post/burn_count/conus_bc_2017).
+
+,#+begin_src bash
+launch_postprocessing () {
+    local YEAR=$1
+    ISRUNNING=`squeue -u gridfire | grep "scratch $YEAR" | wc -l`
+    if [ "$ISRUNNING" = "0" ]; then
+        ENVIRONMENT="ALL"
+        ENVIRONMENT+=",YEAR=$YEAR"
+        ENVIRONMENT+=",TILES_TO_PROCESS_CSV=$TILES_TO_PROCESS_CSV"
+        ENVIRONMENT+=",FOD_BY_PYROME_DIR=$FOD_BY_PYROME_DIR"
+        ENVIRONMENT+=",FOD_BURN_PROBABILITY_CSV=$FOD_BURN_PROBABILITY_CSV"
+        ENVIRONMENT+=",GRIDFIRE_ANNUAL_BURNPROB_DIR=$GRIDFIRE_ANNUAL_BURNPROB_DIR"
+        ENVIRONMENT+=",GRIDFIRE_SCRIPTS_REPO=$GRIDFIRE_SCRIPTS_REPO"
+        ENVIRONMENT+=",GRIDFIRE_SCRIPTS_REPO=$GRIDFIRE_SCRIPTS_REPO"
+        ENVIRONMENT+=",GRIDFIRE_SCRIPTS_REPO=$GRIDFIRE_SCRIPTS_REPO"
+        ENVIRONMENT+=",PYROME_ACRES_CSV=$PYROME_ACRES_CSV"
+        ENVIRONMENT+=",PYROMES_DIR=$PYROMES_DIR"
+
+        if [ "$SLURM_EXCLUDE_NODES_FOR_POSTPROCESS" = "" ]; then
+            sbatch --priority=4000000000 \
+                   --job-name=post$YEAR.run \
+                   --output=$GRIDFIRE_ANNUAL_BURNPROB_DIR/out/post_${YEAR}_%j.out \
+                   --export=$ENVIRONMENT \
+                   $GRIDFIRE_SCRIPTS_REPO/tangle/parallel_merge.slurm
+        else
+            sbatch --priority=4000000000 \
+                   --job-name=post$YEAR.run \
+                   --output=$GRIDFIRE_ANNUAL_BURNPROB_DIR/out/post_${YEAR}_%j.out \
+                   --export=$ENVIRONMENT \
+                   --exclude=$SLURM_EXCLUDE_NODES_FOR_POSTPROCESS \
+                   $GRIDFIRE_SCRIPTS_REPO/tangle/parallel_merge.slurm
+        fi
+    else
+        echo "$YEAR not ready for conus merge"
+    fi
+}
+
+for YEAR in ${YEARS_TO_RUN[*]}; do
+    launch_postprocessing $YEAR
+done
+,#+end_src
+
+,#+RESULTS:
+: Submitted batch job 492976
+: Submitted batch job 492977
+
+,*** Launch Post Process: Year Aggregation
+
+This process will stitch each tile across the years using different merging functions depending on
+which layer it is. You can find these GeoTIFFs under post/post_allyears (i.e. post/burn_count/conus_bc_allyr.tif).
+
+,#+begin_src bash
+ANYRUNNING=no
+for YEAR in ${YEARS_TO_RUN[*]} ; do
+    ISRUNNING=`squeue -u gridfire | grep "scratch $YEAR" | wc -l`
+    if [ "$ISRUNNING" != "0" ]; then
+        ANYRUNNING=yes
+    fi
+done
+
+if [ "$ANYRUNNING" = "yes" ]; then
+    echo "Not all years have completed. Cannot aggregate."
+else
+    ENVIRONMENT="ALL"
+    ENVIRONMENT+=",GRIDFIRE_ANNUAL_BURNPROB_DIR=$GRIDFIRE_ANNUAL_BURNPROB_DIR"
+    ENVIRONMENT+=",GRIDFIRE_SCRIPTS_REPO=$GRIDFIRE_SCRIPTS_REPO"
+    ENVIRONMENT+=",TILES_TO_PROCESS_CSV=$TILES_TO_PROCESS_CSV"
+    ENVIRONMENT+=",YEARS_TO_RUN=$YEARS_TO_RUN"
+
+    if [ "$SLURM_EXCLUDE_NODES_FOR_POSTPROCESS" = "" ]; then
+        sbatch --priority=4000000000 \
+               --job-name=postallyr.run \
+               --output=$GRIDFIRE_ANNUAL_BURNPROB_DIR/out/post_allyr_%j.out \
+               --export=$ENVIRONMENT \
+               $GRIDFIRE_SCRIPTS_REPO/tangle/parallel_aggregate.slurm
+    else
+        sbatch --priority=4000000000 \
+               --job-name=postallyr.run \
+               --output=$GRIDFIRE_ANNUAL_BURNPROB_DIR/out/post_allyr_%j.out \
+               --export=$ENVIRONMENT \
+               --exclude=$SLURM_EXCLUDE_NODES_FOR_POSTPROCESS \
+               $GRIDFIRE_SCRIPTS_REPO/tangle/parallel_aggregate.slurm
+    fi
+fi
+,#+end_src
+
+,#+RESULTS:
+: Submitted batch job 496061
+
+,** Launch Run and Post Processing Together
+
+,#+begin_src bash :exports code :tangle tangle/submit_slurm_jobs.sh :padline no :no-expand
+#!/bin/sh
+if [ "$TEST_RUN" = "true" ]; then
+    CHUNK_NUMS="22"
+else
+    CHUNK_NUMS=`seq 5 15`
+    CHUNK_NUMS="$CHUNK_NUMS "`seq 17 75`
+    CHUNK_NUMS="$CHUNK_NUMS 79 80"
+fi
+
+mkdir -p $GRIDFIRE_ANNUAL_BURNPROB_DIR
+cd $GRIDFIRE_ANNUAL_BURNPROB_DIR
+rm -f -r ./out ./locks ./log_postprocess
+mkdir -p ./out ./locks/out ./log_postprocess
+
+launch_postprocessing () {
+    local YEAR=$1
+    ISRUNNING=`squeue -u gridfire | grep "scratch $YEAR" | wc -l`
+    while [ "$ISRUNNING" != "0" ]; do
+        sleep 60
+        ISRUNNING=`squeue -u gridfire | grep "scratch $YEAR" | wc -l`
+    done
+
+    ENVIRONMENT="ALL"
+    ENVIRONMENT+=",YEAR=$YEAR"
+    ENVIRONMENT+=",TILES_TO_PROCESS_CSV=$TILES_TO_PROCESS_CSV"
+    ENVIRONMENT+=",FOD_BY_PYROME_DIR=$FOD_BY_PYROME_DIR"
+    ENVIRONMENT+=",FOD_BURN_PROBABILITY_CSV=$FOD_BURN_PROBABILITY_CSV"
+    ENVIRONMENT+=",GRIDFIRE_ANNUAL_BURNPROB_DIR=$GRIDFIRE_ANNUAL_BURNPROB_DIR"
+    ENVIRONMENT+=",GRIDFIRE_SCRIPTS_REPO=$GRIDFIRE_SCRIPTS_REPO"
+    ENVIRONMENT+=",GRIDFIRE_SCRIPTS_REPO=$GRIDFIRE_SCRIPTS_REPO"
+    ENVIRONMENT+=",GRIDFIRE_SCRIPTS_REPO=$GRIDFIRE_SCRIPTS_REPO"
+    ENVIRONMENT+=",PYROME_ACRES_CSV=$PYROME_ACRES_CSV"
+    ENVIRONMENT+=",PYROMES_DIR=$PYROMES_DIR"
+
+    if [ "$SLURM_EXCLUDE_NODES_FOR_POSTPROCESS" = "" ]; then
+        sbatch --priority=4000000000 \
+               --job-name=postallyr.run \
+               --output=$GRIDFIRE_ANNUAL_BURNPROB_DIR/out/post_allyr_%j.out \
+               --export=$ENVIRONMENT \
+               $GRIDFIRE_SCRIPTS_REPO/tangle/parallel_aggregate.slurm
+    else
+        sbatch --priority=4000000000 \
+               --job-name=postallyr.run \
+               --output=$GRIDFIRE_ANNUAL_BURNPROB_DIR/out/post_allyr_%j.out \
+               --export=$ENVIRONMENT \
+               --exclude=$SLURM_EXCLUDE_NODES_FOR_POSTPROCESS \
+               $GRIDFIRE_SCRIPTS_REPO/tangle/parallel_aggregate.slurm
+    fi
+}
+
+launch_aggregation () {
+    ANYRUNNING=yes
+    while [ "$ANYRUNNING" = "yes" ]; do
+        ANYRUNNING=no
+        for YEAR in $YEARS_TO_RUN ; do
+            ISRUNNING=`squeue -u gridfire | grep "scratch $YEAR" | wc -l`
+            if [ "$ISRUNNING" != "0" ]; then
+                ANYRUNNING=yes
+            fi
+        done
+        sleep 60
+    done
+    ENVIRONMENT="ALL"
+    ENVIRONMENT+=",GRIDFIRE_ANNUAL_BURNPROB_DIR=$GRIDFIRE_ANNUAL_BURNPROB_DIR"
+    ENVIRONMENT+=",GRIDFIRE_SCRIPTS_REPO=$GRIDFIRE_SCRIPTS_REPO"
+    ENVIRONMENT+=",TILES_TO_PROCESS_CSV=$TILES_TO_PROCESS_CSV"
+    ENVIRONMENT+=",YEARS_TO_RUN=${YEARS_TO_RUN[*]}"
+
+    if [ "$SLURM_EXCLUDE_NODES_FOR_POSTPROCESS" = "" ]; then
+        sbatch --priority=4000000000 \
+               --job-name=postallyr.run \
+               --output=$GRIDFIRE_ANNUAL_BURNPROB_DIR/out/post_allyr_%j.out \
+               --export=$ENVIRONMENT \
+               $GRIDFIRE_SCRIPTS_REPO/tangle/parallel_aggregate.slurm
+    else
+        sbatch --priority=4000000000 \
+               --job-name=postallyr.run \
+               --output=$GRIDFIRE_ANNUAL_BURNPROB_DIR/out/post_allyr_%j.out \
+               --export=$ENVIRONMENT \
+               --exclude=$SLURM_EXCLUDE_NODES_FOR_POSTPROCESS \
+               $GRIDFIRE_SCRIPTS_REPO/tangle/parallel_aggregate.slurm
+    fi
+}
+
+COUNT=0
+
+for YEAR in ${YEARS_TO_RUN[*]}; do
+    for CHUNK_NUM in $CHUNK_NUMS; do
+        LOCKFILE=$GRIDFIRE_ANNUAL_BURNPROB_DIR/locks/${YEAR}_$CHUNK_NUM.lock
+        touch $LOCKFILE
+        NOW=`date -u +"%Y-%m-%d %H:%M:%S"`
+        echo $NOW $YEAR $CHUNK_NUM
+        let "COUNT = COUNT + 1"
+
+        #set environment
+        ENVIRONMENT="ALL"
+        ENVIRONMENT+=",CHUNK_NUM=$CHUNK_NUM"
+        ENVIRONMENT+=",ELMFIRE_ANNUAL_BURNPROB_DIR=$ELMFIRE_ANNUAL_BURNPROB_DIR"
+        ENVIRONMENT+=",GRIDFIRE_ANNUAL_BURNPROB_DIR=$GRIDFIRE_ANNUAL_BURNPROB_DIR"
+        ENVIRONMENT+=",GRIDFIRE_REPO=$GRIDFIRE_REPO"
+        ENVIRONMENT+=",GRIDFIRE_RUN_SCRIPT=$GRIDFIRE_RUN_SCRIPT"
+        ENVIRONMENT+=",GRIDFIRE_SCRIPTS_REPO=$GRIDFIRE_SCRIPTS_REPO"
+        ENVIRONMENT+=",GRIDFIRE_SETUP_SCRIPT=$GRIDFIRE_SETUP_SCRIPT"
+        ENVIRONMENT+=",INPUTS_FUEL_DIR=$INPUTS_FUEL_DIR"
+        ENVIRONMENT+=",INPUTS_LIVE_FUEL_MOISTURE_DIR=$INPUTS_LIVE_FUEL_MOISTURE_DIR"
+        ENVIRONMENT+=",INPUTS_SDI_DIR=$INPUTS_SDI_DIR"
+        ENVIRONMENT+=",INPUTS_TOPOGRAPHY_DIR=$INPUTS_TOPOGRAPHY_DIR"
+        ENVIRONMENT+=",INPUTS_WEATHER_DIR=$INPUTS_WEATHER_DIR"
+        ENVIRONMENT+=",JAVA_CMD=$JAVA_CMD"
+        ENVIRONMENT+=",JAVA_OPTS=$JAVA_OPTS"
+        ENVIRONMENT+=",LOCKFILE=$LOCKFILE"
+        ENVIRONMENT+=",TILES_TO_PROCESS_CSV=$TILES_TO_PROCESS_CSV"
+        ENVIRONMENT+=",TEST_RUN=$TEST_RUN"
+        ENVIRONMENT+=",YEAR=$YEAR"
+
+        if [ "$SLURM_EXCLUDE_NODES_FOR_RUN" = "" ]; then
+            sbatch --priority=3000000000 \
+                   --job-name=${YEAR}_$CHUNK_NUM.run \
+                   --output=$GRIDFIRE_ANNUAL_BURNPROB_DIR/locks/out/${YEAR}_${CHUNK_NUM}_%j.out \
+                   --error=$GRIDFIRE_ANNUAL_BURNPROB_DIR/locks/out/error_${YEAR}_${CHUNK_NUM}_%j.out \
+                   --export=$ENVIRONMENT \
+                   $GRIDFIRE_SCRIPTS_REPO/tangle/$SLURM_LAUNCH_SCRIPT
+        else
+            sbatch --priority=3000000000 \
+                   --job-name=${YEAR}_$CHUNK_NUM.run \
+                   --output=$GRIDFIRE_ANNUAL_BURNPROB_DIR/locks/out/${YEAR}_${CHUNK_NUM}_%j.out \
+                   --error=$GRIDFIRE_ANNUAL_BURNPROB_DIR/locks/out/error_${YEAR}_${CHUNK_NUM}_%j.out \
+                   --export=$ENVIRONMENT \
+                   --exclude=$SLURM_EXCLUDE_NODES_FOR_RUN \
+                   $GRIDFIRE_SCRIPTS_REPO/tangle/$SLURM_LAUNCH_SCRIPT
+        fi
+
+        sleep 1
+        NUM_LOCKS=`ls $GRIDFIRE_ANNUAL_BURNPROB_DIR/locks/*.lock 2> /dev/null | wc -l`
+        while [ "$NUM_LOCKS" -ge "2" ]; do
+            sleep 1
+            NUM_LOCKS=`ls $GRIDFIRE_ANNUAL_BURNPROB_DIR/locks/*.lock | wc -l`
+        done
+    done
+
+    sleep 5
+
+    NOW=`date -u +"%Y-%m-%d %H:%M:%S"`
+    echo "$NOW launching postprocessing for $YEAR"
+    launch_postprocessing $YEAR &
+
+done
+
+sleep 60
+
+NOW=`date -u +"%Y-%m-%d %H:%M:%S"`
+echo "$NOW launching aggregation"
+
+launch_aggregation
+
+wait
+exit 0
+,#+end_src
+
+,* Monitor Slurm Jobs
+
+,#+name slurm-queue
+,#+begin_src bash :results output table
+squeue -u gridfire
+,#+end_src
+
+,#+RESULTS:
+|  JOBID | PARTITION | NAME     | USER     | ST | TIME | NODES | NODELIST(REASON) |
+| 492949 | scratch   | 2017_22. | gridfire | R  | 4:48 |     1 | hades            |
+| 492950 | scratch   | 2018_22. | gridfire | R  | 3:42 |     1 | rhea             |
+
+,#+begin_src bash :colnames nil JOBIDS=slurm-queue[*,0]
+echo $JOBIDS
+#scontrol show jobs
+,#+end_src
+
+,#+RESULTS:
+:
+
+,* Slurm Scripts Used
+
+NOTE: Any changes to the following code blocks must be tangled back
+into files. Sbatch uses the files and not these blocks.
+
+,** Launch.slurm
+
+Launch Slurm Jobs for Each Year and Chunk of central tiles . This
+script will preprocess chunks of central tiles and it's 8 surrounding
+neighbor tiles, generating bsq input files in the scratch directory of the
+allocated SLURM node. It will then launch gridfire runs for tiles that
+have input decks setup up by the preprocess step.
+
+Three files determine the tiles that get's processed:
+tiles_central.txt
+tiles_run.txt
+TILES_TO_PROCESS_CSV
+
+"tiles_central.txt" and "tiles_run.txt" are used for preprocessing the input data. After
+preprocessing, only tiles in TILES_TO_PROCESS_CSV get to run a simulation.
+
+,#+name: launch-slurm
+,#+begin_src bash :exports code :tangle tangle/launch.slurm :padline no :no-expand
+#!/bin/bash
+#SBATCH --nodes=1                # node count
+#SBATCH --ntasks=1               # total number of tasks across all nodes
+#SBATCH --cpus-per-task=128      # cpu-cores per task (>1 if multi-threaded tasks)
+
+# Echo some basic information about the run
+date -u +"%Y-%m-%d %H:%M:%S"
+echo "YEAR: $YEAR"
+echo "CHUNK_NUM: $CHUNK_NUM"
+echo "HOSTNAME: $HOSTNAME"
+echo "LOCKFILE: $LOCKFILE"
+
+# Initialize timers
+START_SEC=`date -u +%s`
+START_PREPROCESS_SEC=`date -u +%s`
+SEC_GRIDFIRE=0
+SEC_POSTPROCESS=0
+
+# Data directories
+STARTING_DIR=$GRIDFIRE_ANNUAL_BURNPROB_DIR
+FUELS_DIR=$INPUTS_FUEL_DIR
+TOPO_DIR=$INPUTS_TOPOGRAPHY_DIR
+WEATHER_DIR=$INPUTS_WEATHER_DIR
+LFM_INPUTS_DIR=$INPUTS_LIVE_FUEL_MOISTURE_DIR
+SDI_INPUTS_DIR=$INPUTS_SDI_DIR
+
+# Tiles & blocks
+BLOCKS_DIR=$GRIDFIRE_SCRIPTS_REPO/config/blocks80
+# CENTRAL_TILES_TO_UNCOMPRESS=`sed "${CHUNK_NUM}q;d" $BLOCKS_DIR/tiles_central.txt`
+# TILES=`sed "${CHUNK_NUM}q;d" $BLOCKS_DIR/tiles_run.txt`
+
+if [ "$TEST_RUN" = "true" ]; then
+    CENTRAL_TILES_TO_UNCOMPRESS="014_027 014_030"
+    TILES="014_027 014_028 014_029"
+else
+    CENTRAL_TILES_TO_UNCOMPRESS=`sed "${CHUNK_NUM}q;d" $BLOCKS_DIR/tiles_central.txt`
+    TILES=`sed "${CHUNK_NUM}q;d" $BLOCKS_DIR/tiles_run.txt`
+fi
+
+TILEFILE_TO_RUN="${GRIDFIRE_SCRIPTS_REPO}/${TILES_TO_PROCESS_CSV}"
+
+# Scratch
+SCRATCH_LOCAL_INPUTS=/scratch/gridfire/local_inputs
+SCRATCH_LOCAL_OUTPUTS=/scratch/gridfire/local_outputs
+rm -f -r /scratch/gridfire $SCRATCH_LOCAL_INPUTS
+rm -f -r /scratch/gridfire $SCRATCH_LOCAL_OUTPUTS
+mkdir /scratch/gridfire $SCRATCH_LOCAL_INPUTS $SCRATCH_LOCAL_OUTPUTS ./tiles ./tiles/$YEAR 2> /dev/null
+cp -f $GRIDFIRE_SCRIPTS_REPO/config/dummy.bsq.aux.xml $SCRATCH_LOCAL_INPUTS
+
+# Function link_tiles:
+function link_tiles {
+    local QUANTITY=$1
+    local DATADIR=$2
+    local I=$3
+    local J=$4
+    local SUBDIR=$5
+    local UNCOMPRESS=$6
+
+    i=$(((10#$I))) ; let "im1 = i - 1"; let "ip1 = i + 1"
+    j=$((10#$J)) ; let "jm1 = j - 1"; let "jp1 = j + 1"
+
+    for i in $(eval echo "{$im1..$ip1}"); do
+        I=`printf "%03d" $i`
+        let "ilocal = i + 1 - im1"
+        for j in $(eval echo "{$jm1..$jp1}"); do
+            J=`printf "%03d" $j`
+            TILE=${I}_${J}
+            ISNEEDED=`cat "$GRIDFIRE_SCRIPTS_REPO/config/tiles_with_halo.txt" | grep $TILE | wc -l`
+            if [ "$ISNEEDED" = "0" ]; then
+                continue
+            fi
+
+            mkdir $SCRATCH_LOCAL_INPUTS/$TILE 2> /dev/null
+            let "jlocal = j + 1 - jm1"
+            if [ "$SUBDIR" = "weather" ]; then
+                if [ "$UNCOMPRESS" = "yes" ]; then
+                    cp -f $SCRATCH_LOCAL_INPUTS/dummy.bsq.aux.xml $SCRATCH_LOCAL_INPUTS/$TILE/${QUANTITY}_$YEAR.bsq.aux.xml
+                    tar -xvzf $DATADIR/$TILE/${QUANTITY}_$YEAR.tgz -C $SCRATCH_LOCAL_INPUTS/$TILE/ >& /dev/null
+                else
+                    for SUFFIX in bsq hdr bsq.aux.xml; do #prj
+                        ln -fs $SCRATCH_LOCAL_INPUTS/$TILE/${QUANTITY}_$YEAR.$SUFFIX $SCRATCH/${QUANTITY}_${ilocal}_${jlocal}.$SUFFIX
+                    done
+                fi
+            else #fuels
+                if [ "$UNCOMPRESS" = "yes" ]; then
+                    gdal_translate -of ENVI -co "INTERLEAVE=BSQ" -a_nodata -9999 $DATADIR/$TILE/$QUANTITY.tif $SCRATCH_LOCAL_INPUTS/$TILE/$QUANTITY.bsq >& /dev/null
+                else
+                    for SUFFIX in bsq hdr bsq.aux.xml; do #prj
+                        ln -fs $SCRATCH_LOCAL_INPUTS/$TILE/$QUANTITY.$SUFFIX $SCRATCH/${QUANTITY}_${ilocal}_${jlocal}.$SUFFIX
+                    done
+                fi
+            fi
+        done
+    done
+}
+
+function add_pyrome_to_csv {
+    local GRIDFIRE_CSV=$1
+    local ELMFIRE_CSV=$2
+    local OUTPUT_CSV=$1
+    local PYROME_INDEX=$3
+    local GRIDFIRE_HEADERS=$(head -n 1 $GRIDFIRE_CSV)
+    local GRIDFIRE_ROWS=$(cat $GRIDFIRE_CSV | tail --lines=+2 | sort --numeric-sort --field-separator=, --key=1)
+    local GRIDFIRE_ROWS_ARR=($GRIDFIRE_ROWS)
+    local ELMFIRE_ROWS=$(cat $ELMFIRE_CSV | tail --lines=+2 | sort --numeric-sort --field-separator=, --key=1)
+    local ELMFIRE_ROWS_ARR=($ELMFIRE_ROWS)
+
+    echo "$GRIDFIRE_HEADERS,pyrome" > $OUTPUT_CSV
+    for index in "${!GRIDFIRE_ROWS_ARR[@]}";
+    do
+        local PYROME=`echo ${ELMFIRE_ROWS_ARR[index]} | cut --delimiter=, --fields=$PYROME_INDEX`
+        echo "${GRIDFIRE_ROWS_ARR[index]},$PYROME" >> $OUTPUT_CSV
+    done
+}
+
+# Preprocess tiles right away
+for CENTRAL_TILE_TO_UNCOMPRESS in $CENTRAL_TILES_TO_UNCOMPRESS; do
+
+    ISNEEDED=`cat "$GRIDFIRE_SCRIPTS_REPO/config/tiles_with_halo.txt" | grep $CENTRAL_TILE_TO_UNCOMPRESS | wc -l`
+    echo $ISNEEDED
+    if [ "$ISNEEDED" = "0" ]; then
+        continue
+    fi
+
+    I=`echo $CENTRAL_TILE_TO_UNCOMPRESS | cut -d_ -f1`
+    J=`echo $CENTRAL_TILE_TO_UNCOMPRESS | cut -d_ -f2`
+
+    NOW=`date -u +"%Y-%m-%d %H:%M:%S"`
+    echo "$NOW Uncompressing central tile ${I}_${J}"
+
+    for QUANTITY in cbd cbh cc ch fbfm40; do
+        link_tiles $QUANTITY $FUELS_DIR $I $J fuels_and_topography yes &
+    done
+
+    link_tiles sdi $SDI_INPUTS_DIR $I $J fuels_and_topography yes &
+
+    for QUANTITY in asp dem slp; do
+        link_tiles $QUANTITY $TOPO_DIR $I $J fuels_and_topography yes &
+    done
+
+    for QUANTITY in m100 m10 m1 wd ws; do
+        link_tiles $QUANTITY $WEATHER_DIR $I $J weather yes &
+    done
+
+    link_tiles lh $LFM_INPUTS_DIR $I $J weather yes &
+    link_tiles lw $LFM_INPUTS_DIR $I $J weather yes &
+
+    wait
+done
+echo "waiting for uncompressing to finish"
+wait
+sleep 0.1
+rm -f $LOCKFILE
+
+DONE_PREPROCESS_SEC=`date -u +%s`
+let "SEC_PREPROCESS = DONE_PREPROCESS_SEC - START_PREPROCESS_SEC"
+
+for TILE in $TILES; do
+
+    cd $STARTING_DIR
+
+    ISNEEDED=`cat $TILEFILE_TO_RUN | grep $TILE | wc -l`
+    if [ "$ISNEEDED" = "0" ]; then
+        continue
+    fi
+
+    SCRATCH=/scratch/gridfire/gridfire_${YEAR}_$TILE
+
+    rm -f -r ./tiles/$YEAR/$TILE $SCRATCH
+    mkdir ./tiles/$YEAR/$TILE $SCRATCH $SCRATCH/outputs 2> /dev/null
+    echo $HOSTNAME > ./tiles/$YEAR/$TILE/runhost.txt
+
+    cd $SCRATCH
+
+    ln -fs $GRIDFIRE_SCRIPTS_REPO/pyrome_adjustment_factors.csv .
+    ln -fs $GRIDFIRE_SCRIPTS_REPO/pyrome_calibration_constants.csv .
+
+
+    I=`echo $TILE | cut -d_ -f1`
+    J=`echo $TILE | cut -d_ -f2`
+
+    date -u +"%Y-%m-%d %H:%M:%S"
+    echo "Getting ready to run GRIDFIRE for tile: I: $I, J: $J"
+
+    for QUANTITY in cbd cbh cc ch fbfm40; do
+        link_tiles $QUANTITY $FUELS_DIR $I $J fuels_and_topography no &
+    done
+
+    link_tiles sdi $SDI_INPUTS_DIR $I $J fuels_and_topography no &
+
+    for QUANTITY in asp dem slp; do
+        link_tiles $QUANTITY $TOPO_DIR $I $J fuels_and_topography no &
+    done
+
+    for QUANTITY in m100 m10 m1 wd ws; do
+        link_tiles $QUANTITY $WEATHER_DIR $I $J weather no &
+    done
+    wait
+
+    link_tiles lh $LFM_INPUTS_DIR $I $J weather no &
+    link_tiles lw $LFM_INPUTS_DIR $I $J weather no &
+
+    # Process elmfire.data -> gridfire.edn
+
+    # cp $GRIDFIRE_ANNUAL_BURNPROB_DIR/tiles/$YEAR/$TILE/elmfire.data .
+    cp $ELMFIRE_ANNUAL_BURNPROB_DIR/tiles/$YEAR/$TILE/elmfire.data .
+    cp $ELMFIRE_ANNUAL_BURNPROB_DIR/tiles/$YEAR/$TILE/outputs/fire_size_stats.csv .
+    $GRIDFIRE_REPO/resources/elm_to_grid.clj --every-nth-elmfire 200 --elmfire-config elmfire.data \
+                                             --elmfire-summary-csv fire_size_stats.csv \
+                                             --override-config $GRIDFIRE_SCRIPTS_REPO/gridfire_base.edn \
+
+    cp gridfire.edn $STARTING_DIR/tiles/$YEAR/$TILE/
+    cp elmfire.data $STARTING_DIR/tiles/$YEAR/$TILE/
+    cp fire_size_stats.csv $STARTING_DIR/tiles/$YEAR/$TILE/
+
+    # cp inputs to hard-disk TODO Remove for production
+    cp --dereference ./*.bsq $STARTING_DIR/tiles/$YEAR/$TILE/
+    cp --dereference ./*.hdr $STARTING_DIR/tiles/$YEAR/$TILE/
+    cp --dereference ./*.bsq.aux.xml $STARTING_DIR/tiles/$YEAR/$TILE/
+
+    START_GRIDFIRE_SEC=`date -u +%s`
+    NOW=`date -u +"%Y-%m-%d %H:%M:%S"`
+    echo "$NOW launching GRIDFIRE:" $(readlink $GRIDFIRE_REPO/target/gridfire.jar)
+
+    # Launch GRIDFIRE!
+    $JAVA_CMD $JAVA_OPTS -jar $GRIDFIRE_REPO/target/gridfire.jar gridfire.edn
+
+    NOW=`date -u +"%Y-%m-%d %H:%M:%S"`
+    echo "$NOW done with GRIDFIRE"
+
+    DONE_GRIDFIRE_SEC=`date -u +%s`
+    let "SEC_GRIDFIRE = SEC_GRIDFIRE + DONE_GRIDFIRE_SEC - START_GRIDFIRE_SEC"
+
+    START_POSTPROCESS_SEC=`date -u +%s`
+    NOW=`date -u +"%Y-%m-%d %H:%M:%S"`
+    echo "$NOW copying outputs."
+
+    # Add pyrome column to GridFire's summary csv.
+    add_pyrome_to_csv outputs/summary_stats.csv \
+                      fire_size_stats.csv \
+                      13 # pyrome column index in fire_size_stats.csv
+
+    # Copy inputs from scratch space to permanent storage
+    rm -f -r $STARTING_DIR/tiles/$YEAR/$TILE/outputs
+    mkdir -p $STARTING_DIR/tiles/$YEAR/$TILE/outputs
+    mv ./outputs $STARTING_DIR/tiles/$YEAR/$TILE
+    # mv ./timings* $STARTING_DIR/tiles/$YEAR/$TILE/
+
+
+    DONE_POSTPROCESS_SEC=`date -u +%s`
+
+    let "SEC_POSTPROCESS = SEC_POSTPROCESS + DONE_POSTPROCESS_SEC - START_POSTPROCESS_SEC"
+
+    rm -f -r $SCRATCH
+
+done
+
+NOW=`date -u +"%Y-%m-%d %H:%M:%S"`
+echo "$NOW done"
+
+echo "preprocess: $SEC_PREPROCESS"
+echo "gridfire: $SEC_GRIDFIRE"
+echo "postprocess: $SEC_POSTPROCESS"
+
+echo "$SEC_PREPROCESS,$SEC_GRIDFIRE,$SEC_POSTPROCESS"
+
+rm -f -r /scratch/gridfire/
+
+exit 0
+,#+end_src
+
+,** Parallel_Merge.slurm
+
+Merge output layers in one year across all tiles.
+
+,#+name: parallel-merge-slurm
+,#+begin_src bash :export code :tangle tangle/parallel_merge.slurm :padline no :no-expand
+#!/bin/bash
+#SBATCH --nodes=1                # node count
+#SBATCH --ntasks=1               # total number of tasks across all nodes
+#SBATCH --cpus-per-task=127      # cpu-cores per task (>1 if multi-threaded tasks)
+
+if [ -z "$YEAR" ]; then
+    echo "Exiting because YEAR is not set"
+    exit 1
+fi
+
+<<merge-summary-stats-csvs>>
+
+<<serial-merge>>
+
+<<merge-summary-stats-csvs-by-pyrome>>
+
+<<plot>>
+
+<<fodpb>>
+
+mkdir ./log_postprocess 2> /dev/null
+sleep 1
+
+serial-merge burn_count       $YEAR >& ./log_postprocess/log_merge_burn_count_$YEAR.txt &
+serial-merge flame_length_sum $YEAR >& ./log_postprocess/log_merge_flame_length_sum_$YEAR.txt &
+serial-merge flame_length_max $YEAR >& ./log_postprocess/log_merge_flame_length_max_$YEAR.txt &
+serial-merge spot_count       $YEAR >& ./log_postprocess/log_merge_spot_count_$YEAR.txt &
+merge-summary-stats-csvs      $YEAR >& ./log_postprocess/log_summary_stats_$YEAR.txt &
+
+merge-summary-stats-csvs-by-pyrome $YEAR && plot $YEAR && fodbp $YEAR &
+
+wait
+
+rm -f -r /scratch/gridfire
+
+exit 0
+,#+end_src
+
+,*** Helpers
+,**** serial-merge
+,#+name: serial-merge
+,#+begin_src bash
+function serial-merge {
+
+    if [ -z "$1" ] || [ -z "$2" ] ; then
+        echo "Specify QUANTITY_IN and YEAR as command line arguments"
+        exit 1
+    fi
+    QUANTITY_IN=$1
+    YEAR=$2
+
+    echo "Start: "`date +"%Y-%m-%d %H:%M:%S"`
+
+    BURN_COUNT_TO_BP=1.0
+    SKIP_IF_EXISTS=no
+    DO_CONUS_MERGES=yes
+    TILES=$GRIDFIRE_SCRIPTS_REPO/$TILES_TO_PROCESS_CSV
+    DATADIR=$GRIDFIRE_ANNUAL_BURNPROB_DIR/tiles
+    OUTDIR=$GRIDFIRE_ANNUAL_BURNPROB_DIR/post
+    LETTERS=`echo {A..I}`
+    SCRATCH=/scratch/$USER/${QUANTITY_IN}_$YEAR
+
+    if [ "$QUANTITY_IN" = "burn_count" ]       ; then DIR_OUT=burn_count && QUANTITY_OUT=bc   && OT=UInt16 ; fi
+    if [ "$QUANTITY_IN" = "flame_length_sum" ] ; then DIR_OUT=flame_sum  && QUANTITY_OUT=fs   && OT=UInt32 ; fi
+    if [ "$QUANTITY_IN" = "flame_length_max" ] ; then DIR_OUT=flame_max  && QUANTITY_OUT=fmx  && OT=UInt16 ; fi
+    if [ "$QUANTITY_IN" = "spot_count" ]       ; then DIR_OUT=spot_count && QUANTITY_OUT=sc   && OT=UInt16 ; fi
+
+    rm -f -r $SCRATCH
+    mkdir /scratch/$USER $SCRATCH $OUTDIR $OUTDIR/$DIR_OUT 2> /dev/null
+
+    if [ "$QUANTITY_IN" = "burn_count" ] ; then mkdir $OUTDIR/burnprob 2> /dev/null; fi
+
+    VRTLIST=''
+    for DIR in `ls -d $DATADIR/$YEAR/0*/` ; do
+
+        TILE=`basename $DIR`
+        echo "Processing $QUANTITY_IN $YEAR $TILE at "`date -u +"%Y-%m-%d %H:%M:%S"`
+
+        FNOUT=$OUTDIR/$DIR_OUT/${TILE}_${QUANTITY_OUT}_$YEAR.tif
+        VRTLIST="$VRTLIST $FNOUT"
+
+        if [ -e "$FNOUT" ] && [ "$SKIP_IF_EXISTS" = "yes" ]; then
+            continue
+        fi
+
+        rm -f $FNOUT
+
+        LINE=`cat $TILES | grep $TILE`
+        XMIN=`echo $LINE | cut -d, -f5`
+        YMIN=`echo $LINE | cut -d, -f6`
+        XMAX=`echo $LINE | cut -d, -f7`
+        YMAX=`echo $LINE | cut -d, -f8`
+        TE="$XMIN $YMIN $XMAX $YMAX"
+
+        I=`echo $TILE | cut -d_ -f1`
+        J=`echo $TILE | cut -d_ -f2`
+        i=$((10#$I))
+        j=$((10#$J))
+        let "im1=i-1"
+        let "ip1=i+1"
+        let "jm1=j-1"
+        let "jp1=j+1"
+
+        FNLIST=''
+        for i in $(eval echo "{$im1..$ip1}"); do
+            I=$(printf "%03d" $i)
+            for j in $(eval echo "{$jm1..$jp1}"); do
+                J=$(printf "%03d" $j)
+                I_J=${I}_${J}
+                FNLIST="$FNLIST $DATADIR/$YEAR/$I_J/outputs/$QUANTITY_IN.tif"
+            done
+        done
+
+        COUNT=0
+        RASTERS_TO_SUM=''
+
+        if [ "$QUANTITY_IN" = "flame_length_max" ]; then
+            CALC="numpy.max(("
+        else
+            CALC="0"
+        fi
+
+        rm -f $SCRATCH/*.tif
+        for f in $FNLIST; do
+            let "COUNT = COUNT + 1"
+            LETTER=`echo $LETTERS | cut -d" " -f$COUNT`
+            rm -f $SCRATCH/$LETTER.tif
+            gdalwarp -multi -dstnodata none -ot $OT -te $TE $f $SCRATCH/$LETTER.tif >& /dev/null
+            if [ "$?" = "0" ]; then
+                RASTERS_TO_SUM="$RASTERS_TO_SUM -$LETTER $SCRATCH/$LETTER.tif"
+                if [ "$QUANTITY_IN" = "flame_length_max" ]; then
+                    CALC="${CALC}$LETTER,"
+                else
+                    CALC="$CALC+$LETTER"
+                fi
+            fi
+        done
+
+        if [ "$QUANTITY_IN" = "flame_length_max" ]; then
+            CALC="${CALC}),axis=0)"
+        fi
+
+        if [ "$OT" = "UInt16" ]; then NODATA=65535     ; fi
+        if [ "$OT" = "UInt32" ]; then NODATA=4294967295; fi
+        gdal_calc.py $RASTERS_TO_SUM --NoDataValue=$NODATA --co="COMPRESS=DEFLATE" --co="ZLEVEL=9" --co="TILED=yes" --calc="$CALC" --outfile=$SCRATCH/${TILE}_${QUANTITY_OUT}_$YEAR.tif >& /dev/null
+        mv -f $SCRATCH/${TILE}_${QUANTITY_OUT}_$YEAR.tif $FNOUT
+
+        if [ "$QUANTITY_IN" = "burn_count" ]; then
+            TB=$FNOUT
+            FNOUT=$OUTDIR/burnprob/${TILE}_bp_$YEAR.tif
+            gdal_calc.py -A $TB --type="Float32" --NoDataValue=-9999 --co="COMPRESS=DEFLATE" --co="ZLEVEL=9" --co="TILED=yes" --calc="0.0+(A>0)*A*$BURN_COUNT_TO_BP" --outfile=$SCRATCH/${TILE}_bp_$YEAR.tif >& /dev/null
+            mv -f $SCRATCH/${TILE}_bp_$YEAR.tif $FNOUT
+        fi
+
+    done
+
+    if [ "$DO_CONUS_MERGES" = "yes" ]; then
+        rm -f $SCRATCH/conus_${QUANTITY_OUT}_$YEAR.vrt $OUTDIR/$DIR_OUT/conus_${QUANTITY_OUT}_$YEAR.tif
+        echo "Building VRT for $QUANTITY_IN $YEAR at "`date -u +"%Y-%m-%d %H:%M:%S"`
+        gdalbuildvrt $SCRATCH/conus_${QUANTITY_OUT}_$YEAR.vrt $VRTLIST
+
+        echo "Converting VRT to TIF for $QUANTITY_IN $YEAR at "`date -u +"%Y-%m-%d %H:%M:%S"`
+        gdal_translate -ot $OT -co "COMPRESS=DEFLATE" -co "ZLEVEL=9" -co "BIGTIFF=yes" -co "TILED=yes" -co "NUM_THREADS=8" $SCRATCH/conus_${QUANTITY_OUT}_$YEAR.vrt $SCRATCH/conus_${QUANTITY_OUT}_$YEAR.tif && \
+            gdaladdo -r average $SCRATCH/conus_${QUANTITY_OUT}_$YEAR.tif && \
+            mv $SCRATCH/conus_${QUANTITY_OUT}_$YEAR.tif $OUTDIR/$DIR_OUT/conus_${QUANTITY_OUT}_$YEAR.tif &
+
+        if [ "$QUANTITY_IN" = "burn_count" ]; then
+            cp -f $SCRATCH/conus_${QUANTITY_OUT}_$YEAR.vrt $SCRATCH/conus_burnprob_$YEAR.vrt
+            sed -i 's/burn_count/burnprob/g' $SCRATCH/conus_burnprob_$YEAR.vrt
+            sed -i 's/_bc_/_bp_/g' $SCRATCH/conus_burnprob_$YEAR.vrt
+            sed -i 's/UInt16/Float32/g' $SCRATCH/conus_burnprob_$YEAR.vrt
+            sed -i 's/65535/-9999/g' $SCRATCH/conus_burnprob_$YEAR.vrt
+
+            echo "Converting VRT to TIF for burnprob $YEAR at "`date +"%Y-%m-%d %H:%M:%S"`
+            gdal_translate -ot Float32 -co "COMPRESS=DEFLATE" -co "ZLEVEL=9" -co "BIGTIFF=yes" -co "TILED=yes" -co "NUM_THREADS=8" $SCRATCH/conus_burnprob_$YEAR.vrt $SCRATCH/conus_burnprob_$YEAR.tif && \
+                gdaladdo -r average $SCRATCH/conus_burnprob_$YEAR.tif && \
+                mv $SCRATCH/conus_burnprob_$YEAR.tif $OUTDIR/burnprob/conus_bp_$YEAR.tif &
+        fi
+
+        wait
+
+    fi
+    echo "Done: "`date -u +"%Y-%m-%d %H:%M:%S"`
+    rm -f -r $SCRATCH
+    exit 0
+}
+,#+end_src
+
+,**** merge-summary-stats-csvs
+,#+name: merge-summary-stats-csvs
+,#+begin_src bash
+function merge-summary-stats-csvs {
+
+    if [ -z "$1" ]; then
+        echo "Specify YEAR as command line argument"
+        exit 1
+    fi
+    YEAR=$1
+
+    mkdir ./post ./post/summary_stats 2> /dev/null
+
+    echo "simulation,ignition-row,ignition-col,max-runtime,temperature,relative-humidity,wind-speed-20ft,wind-from-direction,foliar-moisture,ellipse-adjustment-factor,fire-size,flame-length-mean,flame-length-stddev,fire-line-intensity-mean,fire-line-intensity-stddev,crown-fire-size,spot-count,surface-fire-size" > ./post/summary_stats/summary_stats_$YEAR.csv
+
+    if [ "$YEAR" = "allyr" ]; then
+        for f in ./post/summary_stats/summary_stats_2*.csv; do
+            tail -n +2 $f >> ./post/summary_stats/summary_stats_$YEAR.csv
+        done
+    else
+        for DIR in `ls -d ./tiles/$YEAR/*`; do
+            tail -n +2 $DIR/outputs/summary_stats.csv >> ./post/summary_stats/summary_stats_$YEAR.csv
+        done
+    fi
+
+    cp -f summary_stats.vrt ./post/summary_stats/summary_stats_$YEAR.vrt
+    cd ./post/summary_stats/
+    sed -i "s/summary_stats/summary_stats_$YEAR/g" summary_stats_$YEAR.vrt
+    ogr2ogr summary_stats_$YEAR.shp summary_stats_$YEAR.vrt
+}
+,#+end_src
+
+,**** merge-summary-stats-csvs-by-pyrome
+
+This script produces summary stats files by pryome you can find it under  stats_by_pyrome
+(i.e. stats_by_pyrome/2017/010_2017.csv)
+
+,#+name: merge-summary-stats-csvs-by-pyrome
+,#+begin_src bash
+function merge-summary-stats-csvs-by-pyrome {
+
+    if [ -z $1 ]; then
+        YEARS='2017 2018 2019 2020'
+    else
+        YEARS=$1
+    fi
+
+    CWD=$GRIDFIRE_ANNUAL_BURNPROB_DIR
+    local DATADIR=$CWD/tiles
+    local OUTDIR=$CWD/stats_by_pyrome
+    local NUM_PYROMES=128
+    local SCRATCH=/scratch/gridfire/20bypyrome
+    local MASK=
+
+    rm -f -r $SCRATCH
+    mkdir /scratch/gridfire $SCRATCH $SCRATCH/stats_by_pyrome $OUTDIR 2> /dev/null
+
+    # Start by copying everything to local scratch space
+    for YEAR in $YEARS; do
+        if [ ! -d $DATADIR/$YEAR ]; then
+            continue
+        fi
+        mkdir $SCRATCH/stats_by_pyrome/$YEAR
+        for TILEDIR in `ls -d $DATADIR/$YEAR/$MASK*/`; do
+            TILE=`basename $TILEDIR`
+            echo $YEAR $TILE
+            tail -n +2 ${TILEDIR}outputs/summary_stats.csv | tr -d ' ' > $SCRATCH/${TILE}_$YEAR.csv
+            LEN=`cat $SCRATCH/${TILE}_$YEAR.csv | wc -l`
+            if [ "$LEN" = "0" ]; then
+                rm -f  $SCRATCH/${TILE}_$YEAR.csv
+            fi
+        done
+    done
+
+    # Now split up by pyrome
+    for f in $SCRATCH/*.csv; do
+        YEAR=`basename $f | cut -d. -f1 | rev | cut -d_ -f1 | rev`
+        echo $f
+        for PYROME in $(eval echo "{1..$NUM_PYROMES}"); do
+            THREE=`printf %03d $PYROME` && \
+                cat $f | awk -F, -v PYROME=$PYROME '$19 == PYROME' >> $SCRATCH/stats_by_pyrome/$YEAR/${THREE}_$YEAR.csv &
+            # NOTE: GF set PYROME index to 19
+        done
+        wait
+    done
+
+    cp -f -r $SCRATCH/stats_by_pyrome/* $OUTDIR/
+
+    rm -f -r $SCRATCH
+
+    exit 0
+}
+,#+end_src
+
+,**** plot
+
+,#+name: plot
+,#+begin_src bash
+function plot {
+
+    if [ -z $1 ]; then
+        YEARS=`seq 2011 2022`
+    else
+        YEARS=$1
+    fi
+
+    CWD=$GRIDFIRE_ANNUAL_BURNPROB_DIR
+    local DIR_FOD=$FOD_BY_PYROME_DIR
+    local DATADIR=$CWD/stats_by_pyrome
+    local OUTDIR=$CWD/plots_by_pyrome
+    local NUM_PYROMES=128
+    local SCRATCH=/scratch/gridfire/21plot
+    rm -f -r $SCRATCH
+    mkdir /scratch/gridfire $SCRATCH $OUTDIR 2> /dev/null
+
+    for YEAR in $YEARS; do
+
+        if [ "$YEAR" = "allyr" ]; then
+            mkdir $DATADIR/$YEAR 2> /dev/null
+            for PYROME in $(eval echo "{1..$NUM_PYROMES}"); do
+                THREE=`printf %03d $PYROME`
+                rm -f $DATADIR/$YEAR/${THREE}_$YEAR.csv
+                for YYYY in `seq 2011 2022`; do
+                    cat $DATADIR/$YYYY/${THREE}_$YYYY.csv >> $DATADIR/$YEAR/${THREE}_$YEAR.csv
+                done
+            done
+        fi
+
+        if [ ! -d $DATADIR/$YEAR ]; then
+            continue
+        fi
+
+        for PYROME in $(eval echo "{1..$NUM_PYROMES}"); do
+            THREE=`printf %03d $PYROME`
+
+            # Put data from fire occurrence database into csv file for gnuplot:
+            tail -n +2 $DIR_FOD/$THREE.csv | csvcut -c 29 | awk '{if ($1 > 10.0) print $1}' | sort -n > $SCRATCH/fod.txt
+
+            # Write normalized axis:
+            N=`cat $SCRATCH/fod.txt | wc -l`
+
+            # ./gnuplot/write_axis.py $N $SCRATCH/frac.txt
+            # NOTE: GF Emulating the above line by calling python code from this org file
+            python - $N $SCRATCH/frac.txt <<-END
+<<write-axis-py>>
+END
+
+            # Combine into fod.csv
+            paste -d, $SCRATCH/fod.txt $SCRATCH/frac.txt > $SCRATCH/fod.csv
+            rm -f $SCRATCH/frac.txt
+
+            # Put data from gridfire into csv file for gnuplot:
+            tail -n +2 $DATADIR/$YEAR/${THREE}_$YEAR.csv | cut -d, -f7 | awk '{if ($1 > 10.0) print $1}' | sort -n > $SCRATCH/gridfire.txt
+
+            N=`cat $SCRATCH/gridfire.txt | wc -l`
+
+            # ./gnuplot/write_axis.py $N $SCRATCH/frac.txt
+            # NOTE: GF Emulating the above line by calling python code from this org file
+            python - $N $SCRATCH/frac.txt <<-END
+<<write-axis-py>>
+END
+
+            paste -d, $SCRATCH/gridfire.txt $SCRATCH/frac.txt > $SCRATCH/gridfire.csv
+
+            # Copy gnuplot file to scratch
+            cp ./gnuplot/freqmag.plt $SCRATCH
+
+            sed -i "s/PYROMEID/$THREE/g"                 $SCRATCH/freqmag.plt
+            sed -i "s/YEAR/$YEAR/g"                      $SCRATCH/freqmag.plt
+            sed -i "s^DATAFILE1^$SCRATCH/gridfire.csv^g" $SCRATCH/freqmag.plt
+            sed -i "s^DATAFILE2^$SCRATCH/fod.csv^g"      $SCRATCH/freqmag.plt
+            sed -i "s^SCRATCH^$SCRATCH^g"                $SCRATCH/freqmag.plt
+
+            gnuplot $SCRATCH/freqmag.plt
+            cp -f $SCRATCH/*.png $OUTDIR
+        done
+    done
+
+    rm -f -r $SCRATCH
+
+    exit 0
+}
+,#+end_src
+
+,***** write-axis-py
+
+This python script creates a range from 1.0 -> 0.0. at a step size of
+1/n. This range of numbers is written out to a text file to be later
+used to match up against a file of sorted data (low -> high) with the
+same N number of lines. Reading a single pair of values from this
+merged data [x sorted-data-point] means that atleast x percent of this
+set of data is equal to or below the `sorted-data-point`
+
+,#+name: write-axis-py
+,#+begin_src python
+#!/usr/bin/python
+
+import sys
+
+n = sys.argv[1]
+fnout = sys.argv[2]
+text_file = open(fnout, "w")
+
+delta = 1.0 / float(n)
+
+for i in range (0, int(n)):
+   f = 1.0 - float(i)*float(delta)
+   text_file.write("%s\n" % f)
+
+text_file.close()
+
+exit()
+
+,#+end_src
+
+,**** fodpb
+,#+name: fodpb
+,#+begin_src bash
+function fodpb {
+    if [ -z $1 ]; then
+        YEARS=`seq 2011 2022`
+    else
+        YEARS=$1
+    fi
+
+    local FODBP=$FOD_BURN_PROBABILITY_CSV
+
+    local TB_TO_BP_MEDIAN=0.000084
+
+    for YEAR in $YEARS; do
+        DATADIR=./stats_by_pyrome/$YEAR
+        if [ ! -d $DATADIR ]; then
+            continue
+        fi
+        rm -f $DATADIR/bp.* $DATADIR/tb_to_bp.txt
+        PYROME_ACRES=$PYROME_ACRES_CSV
+        PYROMES=$PYROMES_DIR
+        SCRATCH=/scratch/gridfire/22fodbp
+
+        rm -f -r $SCRATCH
+        mkdir $SCRATCH
+
+        tail -n +2 $FODBP | cut -d, -f5 > $SCRATCH/fodbp.txt
+
+        echo "pyrome,rawbp" > $SCRATCH/bpraw.csv
+        echo "scaledbp" > $SCRATCH/bpscaled.csv
+
+        for PYROME in `seq -w 1 128`; do
+            BP_ACTUAL=`sed "${PYROME}q;d" $SCRATCH/fodbp.txt`
+            SUM=`./sum.py $DATADIR/${PYROME}_$YEAR.csv`
+            ACRES=`cat $PYROME_ACRES | csvgrep -c 1 -m $PYROME | cut -d, -f2 | tail -n 1`
+            BP_UNSCALED=`echo "100.0 * $SUM / $ACRES" | bc -l`
+            TB_TO_BP=`echo "$BP_ACTUAL / $BP_UNSCALED" | bc -l`
+            if [ -z "$TB_TO_BP" ]; then
+                TB_TO_BP=$TB_TO_BP_MEDIAN
+            fi
+            BP_SCALED=`echo "$BP_UNSCALED * $TB_TO_BP" | bc -l`
+            echo $PYROME $TB_TO_BP $BP_ACTUAL $BP_SCALED
+            echo "$PYROME,$BP_SCALED" >> $SCRATCH/bpraw.csv
+            echo $TB_TO_BP >> $DATADIR/tb_to_bp.txt
+        done
+        exit 0
+
+        tail -n +2 $SCRATCH/bpraw.csv > $SCRATCH/bprawnoheader.csv
+        BPMAX=`cat $SCRATCH/bprawnoheader.csv | sort -t, -n -k2 | tail -n1 | cut -d, -f2`
+
+        while read LINE; do
+            BPRAW=`echo`
+            NORMLBP=`echo "$BPRAW / $BPMAX" | bc -l`
+            echo $NORMLBP >> $SCRATCH/bpscaled.csv
+        done < $SCRATCH/bprawnoheader.csv
+
+        paste -d, $SCRATCH/bpraw.csv $SCRATCH/bpscaled.csv > $DATADIR/bp.csv
+        echo '"Integer","Real","Real"' > $DATADIR/bp.csvt
+        ogr2ogr $DATADIR/bp.shp $DATADIR/bp.csv
+        for SUFFIX in shp shx prj ; do
+            cp -f $PYROMES.$SUFFIX $DATADIR/bp.$SUFFIX
+        done
+    done
+
+    rm -f -r $SCRATCH
+
+    exit 0
+
+}
+,#+end_src
+
+,** Parallel_Aggregate.slurm
+
+Aggregate outut layers into a single GeoTIFF across all the years for a each tile.
+
+,#+name: parallel-aggregate-slurm
+,#+begin_src bash :tangle tangle/parallel_aggregate.slurm :padline no :no-expand
+#!/bin/bash
+#SBATCH --nodes=1                # node count
+#SBATCH --ntasks=1               # total number of tasks across all nodes
+#SBATCH --cpus-per-task=128      # cpu-cores per task (>1 if multi-threaded tasks)
+#SBATCH --priority=4000000000
+
+function serial-aggregate {
+
+    if [ -z "$1" ]; then
+        echo "Specify QUANTITY as command line argument"
+        exit 1
+    fi
+    QUANTITY=$1
+
+    YEARS=$YEARS_TO_RUN
+    DATADIR=$GRIDFIRE_ANNUAL_BURNPROB_DIR/post
+    OUTDIR=$GRIDFIRE_ANNUAL_BURNPROB_DIR/post/post_allyears
+    TILEFILE="${GRIDFIRE_SCRIPTS_REPO}/${TILES_TO_PROCESS_CSV}"
+    LETTERS=`echo {A..L}`
+    SCRATCH=/scratch/$USER/aggregate_$QUANTITY
+
+    echo "YEARS = $YEARS"
+
+    if [ "$QUANTITY" = "bc"   ] ; then SUBDIR=burn_count   && CALC_TYPE='sum' && OT=UInt32  && NODATA=4294967295 ; fi
+    if [ "$QUANTITY" = "bp"   ] ; then SUBDIR=burnprob     && CALC_TYPE='avg' && OT=Float32 && NODATA=-9999      ; fi
+    if [ "$QUANTITY" = "fs"   ] ; then SUBDIR=flame_sum    && CALC_TYPE='sum' && OT=UInt32  && NODATA=4294967295 ; fi
+    if [ "$QUANTITY" = "fmx"  ] ; then SUBDIR=flame_max    && CALC_TYPE='max' && OT=UInt16  && NODATA=65535      ; fi
+    if [ "$QUANTITY" = "sc"   ] ; then SUBDIR=spot_count   && CALC_TYPE='sum' && OT=UInt16  && NODATA=65535      ; fi
+
+    rm -f -r $SCRATCH
+    mkdir /scratch/gridfire $SCRATCH $OUTDIR $OUTDIR/$SUBDIR 2> /dev/null
+
+    echo "Reading tile file at "`date +"%Y-%m-%d %H:%M:%S"`
+    while read LINE; do
+        TILE=`echo $LINE | cut -d, -f2`
+        TILES="$TILES $TILE"
+    done < $TILEFILE
+
+    function aggregate_rasters {
+        local CALC_TYPE="$1"
+        local CALC_ARGS="$2"
+        local FNLIST="$3"
+        local OUTFILE="$4"
+
+        if [ "$CALC_TYPE" = "sum" ]; then CALC="numpy.sum(("; fi
+        if [ "$CALC_TYPE" = "avg" ]; then CALC="numpy.mean(("; fi
+        if [ "$CALC_TYPE" = "max" ]; then CALC="numpy.max(("; fi
+
+        CALC="${CALC}${CALC_ARGS}),axis=0)"
+
+        rm -f $OUTFILE
+        gdal_calc.py $FNLIST --type=$OT --NoDataValue=$NODATA --co="COMPRESS=DEFLATE" --co="COMPRESS=DEFLATE" --co="ZLEVEL=9" --co="TILED=yes" --calc="$CALC" --outfile=$OUTFILE
+    }
+
+    for TILE in $TILES; do
+        echo "Processing tile $TILE for $QUANTITY at "`date +"%Y-%m-%d %H:%M:%S"`
+
+        FNLIST=''
+        CALC_ARGS=''
+        COUNT=0
+
+        for YEAR in $YEARS; do
+            FN=$DATADIR/$SUBDIR/${TILE}_${QUANTITY}_${YEAR}.tif
+            if [ -e $FN ]; then
+                let "COUNT = COUNT + 1"
+                LETTER=`echo $LETTERS | cut -d' ' -f$COUNT`
+                FNLIST="$FNLIST -$LETTER $SCRATCH/$LETTER.tif"
+                if [ -z "$CALC_ARGS" ]; then
+                    CALC_ARGS="$LETTER"
+                else
+                    CALC_ARGS="$CALC_ARGS,$LETTER"
+                fi
+                rm -f $SCRATCH/$LETTER.tif
+                gdal_translate -a_nodata none $FN $SCRATCH/$LETTER.tif &
+            fi
+        done
+        wait
+        if [ "$COUNT" -gt "0" ]; then
+            OUTFILE=$OUTDIR/$SUBDIR/${TILE}_${QUANTITY}_allyr.tif
+            VRTLIST="$VRTLIST $OUTFILE"
+            echo "CALC_TYPE: $CALC_TYPE"
+            echo "CALC_ARGS: $CALC_ARGS"
+            echo "FNLIST: $FNLIST"
+            aggregate_rasters "$CALC_TYPE" "$CALC_ARGS" "$FNLIST" "$OUTFILE"
+        fi
+
+    done
+
+    echo "Building conus VRT for $QUANTITY at "`date +"%Y-%m-%d %H:%M:%S"`
+    rm -f $SCRATCH/conus_${QUANTITY}_allyr.vrt $OUTDIR/$SUBDIR/conus_${QUANTITY}_allyr.tif
+    gdalbuildvrt $SCRATCH/conus_${QUANTITY}_allyr.vrt $VRTLIST
+
+    echo "Converting VRT to TIF for $QUANTITY at "`date +"%Y-%m-%d %H:%M:%S"`
+    gdal_translate -co "COMPRESS=DEFLATE" -co "ZLEVEL=9" -co "BIGTIFF=yes" -co "TILED=yes" -co "NUM_THREADS=8" $SCRATCH/conus_${QUANTITY}_allyr.vrt $SCRATCH/conus_${QUANTITY}_allyr.tif && \
+        gdaladdo -r average $SCRATCH/conus_${QUANTITY}_allyr.tif && \
+        mv $SCRATCH/conus_${QUANTITY}_allyr.tif $OUTDIR/
+
+    rm -f -r $SCRATCH
+
+    exit 0
+}
+
+mkdir $GRIDFIRE_ANNUAL_BURNPROB_DIR/log_postprocess_allyears
+
+# sleep 1
+
+serial-aggregate bc   >& $GRIDFIRE_ANNUAL_BURNPROB_DIR/log_postprocess_allyears/aggregate_bc.log &
+serial-aggregate bp   >& $GRIDFIRE_ANNUAL_BURNPROB_DIR/log_postprocess_allyears/aggregate_bp.log &
+serial-aggregate fs   >& $GRIDFIRE_ANNUAL_BURNPROB_DIR/log_postprocess_allyears/aggregate_fs.log &
+serial-aggregate fmx  >& $GRIDFIRE_ANNUAL_BURNPROB_DIR/log_postprocess_allyears/aggregate_fmx.log &
+serial-aggregate sc   >& $GRIDFIRE_ANNUAL_BURNPROB_DIR/log_postprocess_allyears/aggregate_sc.log &
+# ./04-fire_size_stats.sh allyr >& $GRIDFIRE_ANNUAL_BURNPROB_DIR/log_postprocess_allyears/fire_size_stats_allyr.log &
+
+wait
+
+exit 0
+,#+end_src
+
+,#+RESULTS: parallel-aggregate-slurm
+#+end_src
+
+* Caveats?
+
+If you change header-args in your org file, you must either reload the file or run ctrl-c ctrl-c at
+the point of change.
