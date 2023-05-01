@@ -8,8 +8,7 @@
 #+PROPERTY: header-args+ :dir /ssh:gridfire@olympus:/tmp
 #+PROPERTY: header-args+ :results output
 
-* Introduction
-* Why?
+* Motivation
 
 - Version controlled Enviornment
 - Reproducable
@@ -25,16 +24,6 @@ echo FOOD=$FOOD
 #+RESULTS:
 : FOOD=RAMEN
 
-** Pass ORG variables to remote procces
-
-#+begin_src bash :exports code :padline no :no-expand :results verbatim
-sh $REMOTE_SCRIPT_REPO/remote-script.sh $FOOD
-#+end_src
-
-#+RESULTS:
-: Launch remote script!
-: Hello RAMEN
-
 ** Git Checkout & Pull Latest
 
 #+begin_src bash
@@ -46,15 +35,17 @@ COMMIT=$(git rev-parse HEAD)
 echo "On branch $GRIDFIRE_SCRIPTS_BRANCH ($COMMIT)"
 #+end_src
 
-#+RESULTS:
-: Fetching origin
-: Your branch is up to date with 'origin/master'.
-: Already up to date.
-: On branch  (a08ab7b323cb6f86461683ce9cf53f1c270b58d7)
+** Pass ORG variables to remote procces
+
+#+begin_src bash :exports code :padline no :no-expand :results verbatim
+sh $REMOTE_SCRIPT_REPO/remote-script.sh $FOOD
+#+end_src
 
 ** Inject code blocks into another
 
-#+begin_src bash :export code :tangle tangle/serve-ramen.sh :padline no :no-expand
+- must set :noweb yes in either the top level header-args or source code block's header
+
+#+begin_src bash :export code :tangle tangle/serve-ramen.sh :padline no :no-expand :noweb yes
 #!/bin/bash
 
 <<make-noodles>>
@@ -68,11 +59,28 @@ for CUSTOMER in $CUSTOMERS; do
     make-stock
     assemble-ramen $CUSTOMER
 done
+N=$(echo $CUSTOMERS | wc -w)
+python - $N <<-END
+<<compute-bill-py>>
+END
 #+end_src
 
 #+RESULTS:
+#+begin_example
+Mix flour and sodium bicarbonate together ...
+Add kombu and katsuboshi into a pot of chicken stock
+Making ramen for DOG
+Mix flour and sodium bicarbonate together ...
+Add kombu and katsuboshi into a pot of chicken stock
+Making ramen for CAT
+Mix flour and sodium bicarbonate together ...
+Add kombu and katsuboshi into a pot of chicken stock
+Making ramen for BIRD
+Your bill is $59.97
+#+end_example
 
-*** make-noodles
+*** steps
+**** make-noodles
 #+name: make-noodles
 #+begin_src bash
 function make-noodles {
@@ -80,7 +88,7 @@ function make-noodles {
 }
 #+end_src
 
-*** make-stock
+**** make-stock
 #+name: make-stock
 #+begin_src bash
 function make-stock {
@@ -88,10 +96,24 @@ function make-stock {
 }
 #+end_src
 
-*** make-ramen
+**** make-ramen
 #+name: assemble-ramen
 #+begin_src bash
 function assemble-ramen {
     echo "Making ramen for $1"
 }
+#+end_src
+
+**** compute-bill
+
+#+name: compute-bill-py
+#+begin_src python
+#!/usr/bin/python
+import sys
+
+n = sys.argv[1]
+
+bill = 19.99 * int(n)
+
+print ('Your bill is $' + str(bill))
 #+end_src
